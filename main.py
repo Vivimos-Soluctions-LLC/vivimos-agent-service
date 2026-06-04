@@ -1,9 +1,10 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
+from pydantic import BaseModel
 from config import settings
-from models import Base
-from services import ingest_document
+from models import Base, Document
+from services import ingest_document, chat_with_document
 
 # Create FastAPI app
 app = FastAPI(
@@ -75,18 +76,25 @@ async def ingest(
     }
 
 
-@app.post("/chat")
-async def chat(query: str, document_id: int):
-    """
-    POST /chat: Query the document with an AI agent.
+class ChatRequest(BaseModel):
+    query: str
+    document_id: int
 
-    TODO: Implement chat pipeline
-    - Find relevant chunks via vector similarity
-    - Build context from chunks
-    - Call Claude API with context
-    - Return response
-    """
-    pass
+
+@app.post("/chat")
+async def chat(request: ChatRequest, db: Session = Depends(get_db)):
+    """POST /chat: Query a document with an AI agent using vector similarity search."""
+    document = db.query(Document).filter(Document.id == request.document_id).first()
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    answer = chat_with_document(db=db, document_id=request.document_id, query=request.query)
+
+    return {
+        "document_id": request.document_id,
+        "query": request.query,
+        "answer": answer,
+    }
 
 
 if __name__ == "__main__":
